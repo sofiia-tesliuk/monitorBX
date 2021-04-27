@@ -199,6 +199,57 @@ int main(int argc, char **argv) {
         fprintf(stderr, "ERROR: Failed to init BPF: %d.\n", err);
         return -3;
     }
+}
+
+
+int main(int argc, char **argv) {
+    char *data_file = "net.dat";
+    char *ifindex_char = NULL;
+    int c, err;
+
+    while ((c = getopt(argc, argv, "hi:f:")) != -1){
+        switch (c){
+            case 'i':
+                ifindex_char = optarg;
+                conf.ifindex = atoi(ifindex_char);
+                if (conf.ifindex == 0){
+                    fprintf(stderr, "ERROR: Invalid index of network device: %s.\n", ifindex_char);
+                    return -1;
+                }
+                break;
+            case 'f':
+                data_file = optarg;
+                break;
+            case 'h':
+                printf("-h Help\n-i Index of network interface\n-f Filename of saved data\n");
+                break;
+        }
+    }
+
+    // Opening data file
+    conf.data_f = fopen(data_file, "a");
+    if (!conf.data_f){
+        fprintf(stderr, "ERROR: Unable to open file: %s.\n", data_file);
+        return -2;
+    }
+
+    // TODO: add an option to load bpf program for collecting reduced information
+
+    err = bpf_init("bpf_program.o", "ip_map");
+    if (err != 0){
+        fprintf(stderr, "ERROR: Failed to init BPF: %d.\n", err);
+        return -3;
+    }
+
+    printf("The kernel loaded the BPF program\n");
+
+    signal(SIGINT, terminate);
+
+    // TODO: call function that collects reduced information
+    collect_general_info();
+    printf("Program is terminated");
+
+    fclose(conf.data_f);
 
     printf("The kernel loaded the BPF program\n");
 
