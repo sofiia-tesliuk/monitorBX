@@ -3,6 +3,7 @@ CLANG = clang
 EXECABLE = monitor-exec
 
 BPFCODE = bpf_program
+BPFCOUNTDISTINCT = bpf_count_distinct
 
 MACRO = -D BPF_TRACE_CUSTOM
 
@@ -18,6 +19,7 @@ clean:
 
 build: ${BPFCODE.c}
 	$(CLANG) $(MACRO) -O2 -target bpf -c $(BPFCODE:=.c) $(CCINCLUDE) -o ${BPFCODE:=.o}
+	$(CLANG) $(MACRO) -O2 -target bpf -c $(BPFCOUNTDISTINCT:=.c) $(CCINCLUDE) -o ${BPFCOUNTDISTINCT:=.o}
 
 bpfload: build
 	clang $(CFLAGS) $(MACRO) -o $(EXECABLE) -lelf $(LOADINCLUDE) $(LIBRARY_PATH) $(BPFSO) \

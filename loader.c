@@ -18,6 +18,9 @@
 
 #define SLEEP_SECONDS 5
 
+#define m 128
+#define estimation_coef 11719
+
 typedef unsigned int u32;
 
 struct Config{
@@ -96,6 +99,106 @@ int collect_general_info(){
         sleep(SLEEP_SECONDS);
         i += 1;
     }
+
+    return 0;
+}
+
+int count_distinct_ip_addresses(){
+    int i = 0;
+    int value, err, pow;
+    float estimate;
+    while(keepRunning){
+        estimate = 0;
+        // i < 128 -- size of array registers
+        for (int j = 0; j < m; j++){
+            err = bpf_map_lookup_elem(conf.map_fd, &j, &value);
+            if (err < 0){
+                fprintf(stderr, "ERROR: "
+                                "lookup value with key (%d) failed (%d): %s\n",
+                        j, -err, strerror(-err));
+            }
+            fprintf(conf.data_f, "\ti: %d; value: %d", j, value);
+            printf("\ti: %d - value: %d;", j, value);
+            if (value > 0.1){
+                pow = 1;
+                for (int k = 0; k < value; k++){
+                    pow *= 2;
+                }
+                estimate += 1 / ((float) pow);
+            }
+        }
+
+        if (estimate > 0.1){
+            printf("\nHarmonic mean: %f", estimate);
+            estimate = 1 / estimate;
+        }
+
+        pow = 128;
+        err = bpf_map_lookup_elem(conf.map_fd, &pow, &value);
+        if (err < 0){
+            fprintf(stderr, "ERROR: "
+                            "lookup number of received packets failed (%d): %s\n",
+                    i, -err, strerror(-err));
+        }
+
+        fprintf(conf.data_f, "\nReceived packets: %d", value);
+        printf("\nReceived packets: %d", value);
+
+
+        fprintf(conf.data_f, "\nCycle %d\n\tEstimate: %f\n", i, estimation_coef * estimate);
+        printf("\nCycle %d\n\tEstimate: %f\n", i, estimation_coef * estimate);
+        sleep(SLEEP_SECONDS);
+        i += 1;
+    }
+
+    return 0;
+}
+
+
+int main(int argc, char **argv) {
+    char *data_file = "net.dat";
+    char *ifindex_char = NULL;
+    int c, err;
+    bool count_distinct = false;
+
+    while ((c = getopt(argc, argv, "hci:f:")) != -1){
+        switch (c){
+            case 'i':
+                ifindex_char = optarg;
+                conf.ifindex = atoi(ifindex_char);
+                if (conf.ifindex == 0){
+                    fprintf(stderr, "ERROR: Invalid index of network device: %s.\n", ifindex_char);
+                    return -1;
+                }
+                break;
+            case 'f':
+                data_file = optarg;
+                break;
+            case 'c':
+                count_distinct = true;
+                break;
+            case 'h':
+                printf("-h Help\n-i Index of network interface\n-f Filename of saved data\n-c Count distinct mode\n");
+                break;
+        }
+    }
+
+    // Opening data file
+    conf.data_f = fopen(data_file, "a");
+    if (!conf.data_f){
+        fprintf(stderr, "ERROR: Unable to open file: %s.\n", data_file);
+        return -2;
+    }
+
+    if (count_distinct){
+        err = bpf_init("bpf_count_distinct.o", "registers");
+    }else{
+        err = bpf_init("bpf_program.o", "ip_map");
+    }
+    if (err != 0){
+        fprintf(stderr, "ERROR: Failed to init BPF: %d.\n", err);
+        return -3;
+    }
 }
 
 
@@ -144,6 +247,19 @@ int main(int argc, char **argv) {
 
     // TODO: call function that collects reduced information
     collect_general_info();
+    printf("Program is terminated");
+
+    fclose(conf.data_f);
+
+    printf("The kernel loaded the BPF program\n");
+
+    signal(SIGINT, terminate);
+
+    if (count_distinct){
+        count_distinct_ip_addresses();
+    }else{
+        collect_general_info();
+    }
     printf("Program is terminated");
 
     fclose(conf.data_f);
