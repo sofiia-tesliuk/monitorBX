@@ -22,7 +22,7 @@ struct bpf_map_def SEC("maps") registers = {
         .type        = BPF_MAP_TYPE_ARRAY,
         .key_size    = sizeof(int),
         .value_size  = sizeof(int),
-        // 128 + 1 (for total number fo packets)
+        // 128 + 1 (for total number of packets)
         .max_entries = 129,
 };
 
@@ -43,7 +43,7 @@ static int rank(int hash){
     return r;
 }
 
-// Number out of first m bits
+// Number out of first log_2_m bits
 static int register_index(int hash){
     int index = 0;
     for (int i = 0; i < log_2_m; i++){
@@ -71,6 +71,7 @@ int xdp_tx(struct xdp_md *ctx)
     struct ethhdr *eth = data;
 
     // check packet size
+    // TODO: replace `1` with `sizeof()`
     if (eth + 1 > data_end) {
         return XDP_PASS;
     }

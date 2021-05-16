@@ -1,6 +1,6 @@
 CLANG = clang
 
-EXECABLE = monitor-exec
+EXECABLE = monitorBX
 
 BPFCODE = bpf_program
 BPFCOUNTDISTINCT = bpf_count_distinct

@@ -15,11 +15,12 @@
 #include <linux/if_link.h>
 
 #include <signal.h>
+#include <time.h>
 
 #define SLEEP_SECONDS 5
 
 #define m 128
-#define estimation_coef 11719
+#define estimation_coef 11719 // a_m * m^2
 
 typedef unsigned int u32;
 
@@ -27,8 +28,24 @@ struct Config{
     int ifindex;
     FILE *data_f;
     int bpf_prog_fd;
-    int map_fd;
+    int ip_map_fd;
+    int port_map_fd;
+    int conf_map_fd;
+    int values_map_fd;
+    int registers_fd;
+    bool count_distinct_mode;
 } conf;
+
+struct GeneralStats{
+    int unique_ips;
+    int unique_ports;
+    int speed;
+    int passed;
+    int dropped;
+    int tcp_n;
+    int udp_n;
+    int other_n;
+};
 
 static volatile int keepRunning = 1;
 
@@ -42,13 +59,36 @@ void print_ip_info(FILE *f, u32 ip, int count){
     fprintf(f, "\t%d.%d.%d.%d count: %d\n", bytes[0], bytes[1], bytes[2], bytes[3], count);
 }
 
+void print_general_stats(struct GeneralStats stats){
+    printf("Speed: %d\nPackets passed: %d\nPackets dropped: %d"
+           "\nPackets with TCP protocol: %d\nPackets with UDP protocol: %d\n"
+           "Packets with Other protocol: %d\n\n", stats.speed, stats.passed, stats.dropped,
+           stats.tcp_n, stats.udp_n, stats.other_n);
+
+    fprintf(conf.data_f, "Speed: %d\nPackets passed: %d\nPackets dropped: %d"
+           "\nPackets with TCP protocol: %d\nPackets with UDP protocol: %d\n"
+           "Packets with Other protocol: %d\n\n", stats.speed, stats.passed, stats.dropped,
+           stats.tcp_n, stats.udp_n, stats.other_n);
+}
+
 
 void terminate(int dummy){
     keepRunning = 0;
 }
 
+char* get_current_time(){
+    time_t rawtime;
+    struct tm * timeinfo;
 
-int bpf_init(char *bpf_filename, char *map_name){
+    time (&rawtime);
+    timeinfo = localtime (&rawtime);
+
+    char* result = asctime(timeinfo);
+    return result;
+}
+
+
+int bpf_init(char *bpf_filename){
     struct bpf_object *obj;
     int err, prog_fd;
 
@@ -62,8 +102,29 @@ int bpf_init(char *bpf_filename, char *map_name){
         printf("err: %d, prog_fd: %d\n", err, conf.bpf_prog_fd); // Noticed that err (that supposed to be fd of bpf program and prog_fd are different.)
     }
 
-    conf.map_fd = bpf_object__find_map_fd_by_name(obj, map_name);
-    printf("Map fd is: %d\n", conf.map_fd);
+    printf("The kernel loaded the BPF program\n");
+
+    if (conf.count_distinct_mode){
+        char *registers_map = "registers";
+        conf.registers_fd = bpf_object__find_map_fd_by_name(obj, registers_map);
+        printf("Registers map fd is: %d\n", conf.registers_fd);
+    }else{
+        char *conf_map = "conf_map";
+        conf.conf_map_fd = bpf_object__find_map_fd_by_name(obj, conf_map);
+        printf("Conf map fd is: %d\n", conf.conf_map_fd);
+
+        char *values_map = "values_map";
+        conf.values_map_fd = bpf_object__find_map_fd_by_name(obj, values_map);
+        printf("Values map fd is: %d\n", conf.values_map_fd);
+
+        char *ip_map = "ip_map";
+        conf.ip_map_fd = bpf_object__find_map_fd_by_name(obj, ip_map);
+        printf("IP map fd is: %d\n", conf.ip_map_fd);
+
+        char *port_map = "port_map";
+        conf.port_map_fd = bpf_object__find_map_fd_by_name(obj, port_map);
+        printf("PORT map fd is: %d\n", conf.port_map_fd);
+    }
 
     err = bpf_set_link_xdp_fd(conf.ifindex, conf.bpf_prog_fd, XDP_FLAGS_UPDATE_IF_NOEXIST | XDP_FLAGS_SKB_MODE);
     if (err < 0) {
@@ -77,24 +138,91 @@ int bpf_init(char *bpf_filename, char *map_name){
 
 
 int collect_general_info(){
-    u32 key;
-    u32 next_key;
-    int value, err;
+    u32 key, next_key;
+    int value;
+    int err, unique_ips, unique_ports;
     int i = 0;
     while(keepRunning){
-        fprintf(conf.data_f, "Cycle %d\n", i);
-        printf("Cycle %d\n", i);
+        unique_ips = 0;
+        unique_ports = 0;
         key = 0;
-        while (bpf_map_get_next_key(conf.map_fd, &key, &next_key) == 0){
-            err = bpf_map_lookup_elem(conf.map_fd, &next_key, &value);
+        while (bpf_map_get_next_key(conf.ip_map_fd, &key, &next_key) == 0){
+            err = bpf_map_lookup_elem(conf.ip_map_fd, &next_key, &value);
             if (err < 0){
                 fprintf(stderr, "ERROR: "
                                 "lookup value with key (%d) failed (%d): %s\n",
                         next_key, -err, strerror(-err));
             }
+            unique_ips += 1;
             print_ip_info(conf.data_f, next_key, value);
             key = next_key;
         }
+
+        key = 0;
+        while (bpf_map_get_next_key(conf.port_map_fd, &key, &next_key) == 0){
+            err = bpf_map_lookup_elem(conf.port_map_fd, &next_key, &value);
+            if (err < 0){
+                fprintf(stderr, "ERROR: "
+                                "lookup value with key (%d) failed (%d): %s\n",
+                        next_key, -err, strerror(-err));
+            }
+            unique_ports += 1;
+            print_ip_info(conf.data_f, next_key, value);
+            fprintf(conf.data_f, "\t%d count: %d\n", next_key, value);
+            key = next_key;
+        }
+
+        struct GeneralStats newStats;
+        key = 0;
+        err = bpf_map_lookup_elem(conf.values_map_fd, &key, &newStats.passed);
+        if (err < 0){
+            fprintf(stderr, "ERROR: "
+                            "lookup number of passed packets (%d) failed (%d): %s\n",
+                    next_key, -err, strerror(-err));
+        }
+
+        key = 1;
+        err = bpf_map_lookup_elem(conf.values_map_fd, &key, &newStats.dropped);
+        if (err < 0){
+            fprintf(stderr, "ERROR: "
+                            "lookup number of dropped packets (%d) failed (%d): %s\n",
+                    next_key, -err, strerror(-err));
+        }
+
+        key = 2;
+        err = bpf_map_lookup_elem(conf.values_map_fd, &key, &newStats.speed);
+        if (err < 0){
+            fprintf(stderr, "ERROR: "
+                            "lookup size (%d) failed (%d): %s\n",
+                    next_key, -err, strerror(-err));
+        }
+        newStats.speed = ((float) newStats.speed) / SLEEP_SECONDS;
+
+        key = 3;
+        err = bpf_map_lookup_elem(conf.values_map_fd, &key, &newStats.tcp_n);
+        if (err < 0){
+            fprintf(stderr, "ERROR: "
+                            "lookup number of packets tcp protocol (%d) failed (%d): %s\n",
+                    next_key, -err, strerror(-err));
+        }
+
+        key = 4;
+        err = bpf_map_lookup_elem(conf.values_map_fd, &key, &newStats.udp_n);
+        if (err < 0){
+            fprintf(stderr, "ERROR: "
+                            "lookup number of packets with udp protocol (%d) failed (%d): %s\n",
+                    next_key, -err, strerror(-err));
+        }
+
+        key = 5;
+        err = bpf_map_lookup_elem(conf.values_map_fd, &key, &newStats.other_n);
+        if (err < 0){
+            fprintf(stderr, "ERROR: "
+                            "lookup number of packets with other protocol (%d) failed (%d): %s\n",
+                    next_key, -err, strerror(-err));
+        }
+
+        print_general_stats(newStats);
 
         sleep(SLEEP_SECONDS);
         i += 1;
@@ -111,14 +239,14 @@ int count_distinct_ip_addresses(){
         estimate = 0;
         // i < 128 -- size of array registers
         for (int j = 0; j < m; j++){
-            err = bpf_map_lookup_elem(conf.map_fd, &j, &value);
+            err = bpf_map_lookup_elem(conf.registers_fd, &j, &value);
             if (err < 0){
                 fprintf(stderr, "ERROR: "
                                 "lookup value with key (%d) failed (%d): %s\n",
                         j, -err, strerror(-err));
             }
-            fprintf(conf.data_f, "\ti: %d; value: %d", j, value);
-            printf("\ti: %d - value: %d;", j, value);
+//            fprintf(conf.data_f, "\ti: %d; value: %d", j, value);
+//            printf("\ti: %d - value: %d;", j, value);
             if (value > 0.1){
                 pow = 1;
                 for (int k = 0; k < value; k++){
@@ -129,24 +257,20 @@ int count_distinct_ip_addresses(){
         }
 
         if (estimate > 0.1){
-            printf("\nHarmonic mean: %f", estimate);
+//            printf("\nHarmonic mean: %f", estimate);
             estimate = 1 / estimate;
         }
 
         pow = 128;
-        err = bpf_map_lookup_elem(conf.map_fd, &pow, &value);
+        err = bpf_map_lookup_elem(conf.registers_fd, &pow, &value);
         if (err < 0){
             fprintf(stderr, "ERROR: "
                             "lookup number of received packets failed (%d): %s\n",
-                    i, -err, strerror(-err));
+                    -err, strerror(-err));
         }
 
-        fprintf(conf.data_f, "\nReceived packets: %d", value);
-        printf("\nReceived packets: %d", value);
-
-
-        fprintf(conf.data_f, "\nCycle %d\n\tEstimate: %f\n", i, estimation_coef * estimate);
-        printf("\nCycle %d\n\tEstimate: %f\n", i, estimation_coef * estimate);
+        fprintf(conf.data_f, "\nTime: %sReceived packets: %d\nEstimate: %f\n", get_current_time(), value, estimation_coef * estimate);
+//        printf("\nTime: %sReceived packets: %d\nEstimate: %f\n", get_current_time(), value, estimation_coef * estimate);
         sleep(SLEEP_SECONDS);
         i += 1;
     }
@@ -159,7 +283,7 @@ int main(int argc, char **argv) {
     char *data_file = "net.dat";
     char *ifindex_char = NULL;
     int c, err;
-    bool count_distinct = false;
+    conf.count_distinct_mode = false;
 
     while ((c = getopt(argc, argv, "hci:f:")) != -1){
         switch (c){
@@ -175,11 +299,11 @@ int main(int argc, char **argv) {
                 data_file = optarg;
                 break;
             case 'c':
-                count_distinct = true;
+                conf.count_distinct_mode = true;
                 break;
             case 'h':
                 printf("-h Help\n-i Index of network interface\n-f Filename of saved data\n-c Count distinct mode\n");
-                break;
+                return 0;
         }
     }
 
@@ -190,77 +314,24 @@ int main(int argc, char **argv) {
         return -2;
     }
 
-    if (count_distinct){
-        err = bpf_init("bpf_count_distinct.o", "registers");
+    if (conf.count_distinct_mode){
+        err = bpf_init("bpf_count_distinct.o");
     }else{
-        err = bpf_init("bpf_program.o", "ip_map");
+        err = bpf_init("bpf_program.o");
     }
     if (err != 0){
         fprintf(stderr, "ERROR: Failed to init BPF: %d.\n", err);
         return -3;
     }
-}
-
-
-int main(int argc, char **argv) {
-    char *data_file = "net.dat";
-    char *ifindex_char = NULL;
-    int c, err;
-
-    while ((c = getopt(argc, argv, "hi:f:")) != -1){
-        switch (c){
-            case 'i':
-                ifindex_char = optarg;
-                conf.ifindex = atoi(ifindex_char);
-                if (conf.ifindex == 0){
-                    fprintf(stderr, "ERROR: Invalid index of network device: %s.\n", ifindex_char);
-                    return -1;
-                }
-                break;
-            case 'f':
-                data_file = optarg;
-                break;
-            case 'h':
-                printf("-h Help\n-i Index of network interface\n-f Filename of saved data\n");
-                break;
-        }
-    }
-
-    // Opening data file
-    conf.data_f = fopen(data_file, "a");
-    if (!conf.data_f){
-        fprintf(stderr, "ERROR: Unable to open file: %s.\n", data_file);
-        return -2;
-    }
-
-    // TODO: add an option to load bpf program for collecting reduced information
-
-    err = bpf_init("bpf_program.o", "ip_map");
-    if (err != 0){
-        fprintf(stderr, "ERROR: Failed to init BPF: %d.\n", err);
-        return -3;
-    }
-
-    printf("The kernel loaded the BPF program\n");
 
     signal(SIGINT, terminate);
 
-    // TODO: call function that collects reduced information
-    collect_general_info();
-    printf("Program is terminated");
-
-    fclose(conf.data_f);
-
-    printf("The kernel loaded the BPF program\n");
-
-    signal(SIGINT, terminate);
-
-    if (count_distinct){
+    if (conf.count_distinct_mode){
         count_distinct_ip_addresses();
     }else{
         collect_general_info();
     }
-    printf("Program is terminated");
+    printf("Program is terminated\n");
 
     fclose(conf.data_f);
 
