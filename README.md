@@ -5,17 +5,35 @@ Monitoring network traffic by interface using **eBPF**.
 The eBPF part is compatible with kernel version 5.10.3.
 
 
-###Setup environment
+### Setup environment
 - Make sure your kernel version supports eBPF
 - Install **libbpf** 
 
-###Monitoring
+### Monitoring
 ```
 sudo make
-sudo ./monitorBX .. 
+sudo ./monitorBX -i I [-f F] [-c] 
 ```
 
-###Start network flow
+**Arguments**
+```
+-h     Help
+-i     Index of network interface
+-f     Filename for saved data
+-c     Count distinct mode
+```
+
+**Output example**
+```
+Speed:                       6.40
+Packets passed:              4
+Packets dropped:             0
+Packets with TCP protocol:   2
+Packets with UDP protocol:   2
+Packets with Other protocol: 0
+```
+
+### Start network flow
 
 ```
 python emulate_network.py [-h] [-s S] [-u] [-n N] [-t] dst

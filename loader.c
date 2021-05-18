@@ -17,6 +17,8 @@
 #include <signal.h>
 #include <time.h>
 
+#define BPF_ANY       0 /* create new element or update existing */
+
 #define SLEEP_SECONDS 5
 
 #define m 128
@@ -60,15 +62,22 @@ void print_ip_info(FILE *f, u32 ip, int count){
 }
 
 void print_general_stats(struct GeneralStats stats){
-    printf("Speed: %d\nPackets passed: %d\nPackets dropped: %d"
-           "\nPackets with TCP protocol: %d\nPackets with UDP protocol: %d\n"
-           "Packets with Other protocol: %d\n\n", stats.speed, stats.passed, stats.dropped,
+    printf("Speed:                       %.2f\n"
+           "Packets passed:              %d\n"
+           "Packets dropped:             %d\n"
+           "Packets with TCP protocol:   %d\n"
+           "Packets with UDP protocol:   %d\n"
+           "Packets with Other protocol: %d\n\n", ((float) stats.speed) / SLEEP_SECONDS, stats.passed, stats.dropped,
            stats.tcp_n, stats.udp_n, stats.other_n);
 
-    fprintf(conf.data_f, "Speed: %d\nPackets passed: %d\nPackets dropped: %d"
-           "\nPackets with TCP protocol: %d\nPackets with UDP protocol: %d\n"
-           "Packets with Other protocol: %d\n\n", stats.speed, stats.passed, stats.dropped,
-           stats.tcp_n, stats.udp_n, stats.other_n);
+    fprintf(conf.data_f,
+            "Speed:                       %.2f\n"
+            "Packets passed:              %d\n"
+            "Packets dropped:             %d\n"
+            "Packets with TCP protocol:   %d\n"
+            "Packets with UDP protocol:   %d\n"
+            "Packets with Other protocol: %d\n\n", ((float) stats.speed) / SLEEP_SECONDS, stats.passed, stats.dropped,
+            stats.tcp_n, stats.udp_n, stats.other_n);
 }
 
 
@@ -153,6 +162,12 @@ int collect_general_info(){
                                 "lookup value with key (%d) failed (%d): %s\n",
                         next_key, -err, strerror(-err));
             }
+            err = bpf_map_delete_elem(conf.ip_map_fd, &next_key);
+            if (err < 0){
+                fprintf(stderr, "ERROR: "
+                                "delete value with key (%d) failed (%d): %s\n",
+                        next_key, -err, strerror(-err));
+            }
             unique_ips += 1;
             print_ip_info(conf.data_f, next_key, value);
             key = next_key;
@@ -166,6 +181,12 @@ int collect_general_info(){
                                 "lookup value with key (%d) failed (%d): %s\n",
                         next_key, -err, strerror(-err));
             }
+            err = bpf_map_delete_elem(conf.port_map_fd, &next_key);
+            if (err < 0){
+                fprintf(stderr, "ERROR: "
+                                "delete value with key (%d) failed (%d): %s\n",
+                        next_key, -err, strerror(-err));
+            }
             unique_ports += 1;
             print_ip_info(conf.data_f, next_key, value);
             fprintf(conf.data_f, "\t%d count: %d\n", next_key, value);
@@ -174,10 +195,17 @@ int collect_general_info(){
 
         struct GeneralStats newStats;
         key = 0;
+        value = 0;
         err = bpf_map_lookup_elem(conf.values_map_fd, &key, &newStats.passed);
         if (err < 0){
             fprintf(stderr, "ERROR: "
                             "lookup number of passed packets (%d) failed (%d): %s\n",
+                    next_key, -err, strerror(-err));
+        }
+        err = bpf_map_update_elem(conf.values_map_fd, &key, &value, BPF_ANY);
+        if (err < 0){
+            fprintf(stderr, "ERROR: "
+                            "drop number of passed packets (%d) to zero failed (%d): %s\n",
                     next_key, -err, strerror(-err));
         }
 
@@ -188,6 +216,12 @@ int collect_general_info(){
                             "lookup number of dropped packets (%d) failed (%d): %s\n",
                     next_key, -err, strerror(-err));
         }
+        err = bpf_map_update_elem(conf.values_map_fd, &key, &value, BPF_ANY);
+        if (err < 0){
+            fprintf(stderr, "ERROR: "
+                            "drop number of dropped packets (%d) to zero failed (%d): %s\n",
+                    next_key, -err, strerror(-err));
+        }
 
         key = 2;
         err = bpf_map_lookup_elem(conf.values_map_fd, &key, &newStats.speed);
@@ -196,13 +230,24 @@ int collect_general_info(){
                             "lookup size (%d) failed (%d): %s\n",
                     next_key, -err, strerror(-err));
         }
-        newStats.speed = ((float) newStats.speed) / SLEEP_SECONDS;
+        err = bpf_map_update_elem(conf.values_map_fd, &key, &value, BPF_ANY);
+        if (err < 0){
+            fprintf(stderr, "ERROR: "
+                            "drop size (%d) to zero failed (%d): %s\n",
+                    next_key, -err, strerror(-err));
+        }
 
         key = 3;
         err = bpf_map_lookup_elem(conf.values_map_fd, &key, &newStats.tcp_n);
         if (err < 0){
             fprintf(stderr, "ERROR: "
                             "lookup number of packets tcp protocol (%d) failed (%d): %s\n",
+                    next_key, -err, strerror(-err));
+        }
+        err = bpf_map_update_elem(conf.values_map_fd, &key, &value, BPF_ANY);
+        if (err < 0){
+            fprintf(stderr, "ERROR: "
+                            "drop number of packets tcp protocol (%d) to zero failed (%d): %s\n",
                     next_key, -err, strerror(-err));
         }
 
@@ -213,6 +258,12 @@ int collect_general_info(){
                             "lookup number of packets with udp protocol (%d) failed (%d): %s\n",
                     next_key, -err, strerror(-err));
         }
+        err = bpf_map_update_elem(conf.values_map_fd, &key, &value, BPF_ANY);
+        if (err < 0){
+            fprintf(stderr, "ERROR: "
+                            "drop number of packets with udp protocol (%d) to zero failed (%d): %s\n",
+                    next_key, -err, strerror(-err));
+        }
 
         key = 5;
         err = bpf_map_lookup_elem(conf.values_map_fd, &key, &newStats.other_n);
@@ -221,6 +272,13 @@ int collect_general_info(){
                             "lookup number of packets with other protocol (%d) failed (%d): %s\n",
                     next_key, -err, strerror(-err));
         }
+        err = bpf_map_update_elem(conf.values_map_fd, &key, &value, BPF_ANY);
+        if (err < 0){
+            fprintf(stderr, "ERROR: "
+                            "lookup number of packets with other protocol (%d) to zero failed (%d): %s\n",
+                    next_key, -err, strerror(-err));
+        }
+
 
         print_general_stats(newStats);
 
@@ -335,7 +393,6 @@ int main(int argc, char **argv) {
 
     fclose(conf.data_f);
 
-    // TODO: take a look why it doesn't offload bpf program
     close(conf.bpf_prog_fd);
 
     return 0;

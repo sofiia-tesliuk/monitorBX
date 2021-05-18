@@ -67,7 +67,7 @@ struct bpf_map_def SEC("maps") port_map = {
 SEC("tx")
 int xdp_tx(struct xdp_md *ctx)
 {
-    int xdp_action = XDP_PASS;
+    int XDP_ACTION = XDP_PASS;
     int index = 0;
     int *value;
 
@@ -76,7 +76,7 @@ int xdp_tx(struct xdp_md *ctx)
     drop_all_packets = bpf_map_lookup_elem(&conf_map, &index);
     if (drop_all_packets) {
         if (*drop_all_packets == 1){
-            xdp_action = XDP_DROP;
+            XDP_ACTION = XDP_DROP;
             index = 1;
         }
     }
@@ -89,8 +89,6 @@ int xdp_tx(struct xdp_md *ctx)
         char errmsg[] = "Failed to update number of passed/dropped packets";
         custom_trace_printk(errmsg, sizeof(errmsg));
     }
-
-    //TODO: pass the whole packet
 
     void *data_end = (void *)(long)ctx->data_end;
     void *data     = (void *)(long)ctx->data;
@@ -108,18 +106,18 @@ int xdp_tx(struct xdp_md *ctx)
 
     // check packet size
     if (eth + 1 > data_end) {
-        return xdp_action;
+        return XDP_ACTION;
     }
 
     // check if the packet is an IP packet
     if (ntohs(eth->h_proto) != ETH_P_IP) {
-        return xdp_action;
+        return XDP_ACTION;
     }
 
     // get the source address of the packet
     struct iphdr *iph = data + sizeof(struct ethhdr);
     if (iph + 1 > data_end) {
-        return xdp_action;
+        return XDP_ACTION;
     }
 
     // Trace message about received packet
@@ -132,13 +130,17 @@ int xdp_tx(struct xdp_md *ctx)
     if (result)
         *result += 1;
     else{
-        *value = 1;
-        int err = bpf_map_update_elem(&ip_map, &(iph->saddr), &value, BPF_NOEXIST);
+        index = 1;
+        int err = bpf_map_update_elem(&ip_map, &(iph->saddr), &index, BPF_NOEXIST);
         if (err != 0){
             char errmsg[] = "Failed to add element to ip map %u, error code %d";
             custom_trace_printk(errmsg, sizeof(errmsg), iph->saddr, err);
         }
     }
+
+//    if ((void*)iph + sizeof(*iph) > data_end){
+//        return XDP_ACTION;
+//    }
 
     u32 dest_port = 0;
     // Identify the protocol of the packet
@@ -159,18 +161,18 @@ int xdp_tx(struct xdp_md *ctx)
     if (value){
         *value += 1;
     }else{
-        char errmsg[] = "Failed to protocol counter";
+        char errmsg[] = "Failed to update protocol counter";
         custom_trace_printk(errmsg, sizeof(errmsg));
     }
 
-    if (dest_port){
+    if (dest_port > 0){
         // Increase counter for destination PORT
         result = bpf_map_lookup_elem(&port_map, &dest_port);
         if (result)
             *result += 1;
         else{
-            *value = 1;
-            int err = bpf_map_update_elem(&port_map, &dest_port, &value, BPF_NOEXIST);
+            index = 1;
+            int err = bpf_map_update_elem(&port_map, &dest_port, &index, BPF_NOEXIST);
             if (err != 0){
                 char errmsg[] = "Failed to add element to port map %u, error code %d";
                 custom_trace_printk(errmsg, sizeof(errmsg), dest_port, err);
@@ -178,7 +180,7 @@ int xdp_tx(struct xdp_md *ctx)
         }
     }
 
-    return xdp_action;
+    return XDP_ACTION;
 }
 
 char _license[] SEC("license") = "GPL";

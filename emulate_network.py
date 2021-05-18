@@ -12,9 +12,18 @@ DEFAULT_BREAK_IN_SECONDS = 2
 
 def send_packets(destination, sleep_seconds):
     while (True):
-        source = '{}.{}.{}.{}'.format(random.randrange(1, 255), random.randrange(1, 255), random.randrange(1, 255), random.randrange(1, 255))
-        sendp(Ether()/IP(src=source, dst=destination, ttl=(1, 1)), iface="vboxnet0")
-        print(source)
+        source_ip = '{}.{}.{}.{}'.format(random.randrange(1, 255), random.randrange(1, 255), random.randrange(1, 255), random.randrange(1, 255))
+        destination_port = random.randrange(1, 1000)
+        protocol_id = random.randrange(0, 3)
+        if protocol_id == 0:
+            sendp(Ether()/IP(src=source_ip, dst=destination, ttl=(1, 1))/TCP(dport=destination_port,flags='S'), iface="vboxnet0")
+        elif protocol_id == 1:
+            sendp(Ether()/IP(src=source_ip, dst=destination, ttl=(1, 1))/UDP(dport=destination_port), iface="vboxnet0")
+        else:
+            sendp(Ether()/IP(src=source_ip, dst=destination, ttl=(1, 1)), iface="vboxnet0")
+
+        protocol = lambda x: "TCP" if x == 0 else "UDP" if x == 1 else "Other"
+        print("Source IP: {}\tProtocol: {}\tDestination port: {}".format(source_ip, protocol(protocol_id), destination_port))
         time.sleep(sleep_seconds)
 
 
