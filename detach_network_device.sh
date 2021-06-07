@@ -1,0 +1,1 @@
+sudo bpftool net detach xdp dev enp0s8

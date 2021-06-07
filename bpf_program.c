@@ -36,12 +36,13 @@ struct bpf_map_def SEC("maps") conf_map = {
 // 2 - Size
 // 3 - Number with TCP protocol
 // 4 - Number with UDP protocol
-// 5 - Number with Other protocol
+// 5 - Number with ICMP protocol
+// 6 - Number with Other protocol
 struct bpf_map_def SEC("maps") values_map = {
         .type        = BPF_MAP_TYPE_ARRAY,
         .key_size    = sizeof(u32),
         .value_size  = sizeof(int),
-        .max_entries = 6,
+        .max_entries = 7,
         .map_flags   = 0
 };
 
@@ -121,7 +122,7 @@ int xdp_tx(struct xdp_md *ctx)
     }
 
     // Trace message about received packet
-    char msg[] = "Hello, ip address is %u";
+    char msg[] = "IP address is %u";
     custom_trace_printk(msg, sizeof(msg), iph->saddr);
 
     // Increase counter for source IP
@@ -138,22 +139,26 @@ int xdp_tx(struct xdp_md *ctx)
         }
     }
 
-//    if ((void*)iph + sizeof(*iph) > data_end){
-//        return XDP_ACTION;
-//    }
-
     u32 dest_port = 0;
     // Identify the protocol of the packet
     if (iph->protocol == IPPROTO_TCP){
         index = 3;
         struct tcphdr *tcp = (void*)iph + sizeof(*iph);
+        if (tcp + 1 > data_end){
+            return XDP_ACTION;
+        }
         dest_port = tcp->dest;
     } else if (iph->protocol == IPPROTO_UDP){
         index = 4;
         struct udphdr *udp = (void*)iph + sizeof(*iph);
+        if (udp + 1 > data_end){
+            return XDP_ACTION;
+        }
         dest_port = udp->dest;
-    } else{
+    } else if (iph->protocol == IPPROTO_ICMP){
         index = 5;
+    } else{
+        index = 6;
     }
 
     // Update counter of protocol

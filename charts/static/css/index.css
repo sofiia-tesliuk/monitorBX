@@ -1,0 +1,27 @@
+.header{
+    padding: 20px 50px 20px 80px;
+}
+
+.chart_columns{
+    width: 35%;
+    height: 100%;
+}
+
+aside{
+    width: 23%;
+    position: absolute;
+    right: 10px;
+    padding-left: 20px;
+}
+
+.page{
+    display: flex;
+}
+
+.log{
+    border-bottom: solid 1px grey;
+}
+
+.row{
+    padding-left: 50px;
+}

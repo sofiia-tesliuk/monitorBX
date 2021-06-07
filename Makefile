@@ -23,7 +23,7 @@ build: ${BPFCODE.c}
 
 bpfload: build
 	clang $(CFLAGS) $(MACRO) -o $(EXECABLE) -lelf $(LOADINCLUDE) $(LIBRARY_PATH) $(BPFSO) \
-        $(BPFLOADER) loader.c
+        $(BPFLOADER) loader.c -lm
 
 $(EXECABLE): bpfload
 
