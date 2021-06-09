@@ -10,7 +10,7 @@
 #define pow_2_32 4294967296
 #define k_neighbors 7
 
-#define SLEEP_SECONDS 5
+#define SLEEP_SECONDS 1
 
 typedef unsigned int u32;
 

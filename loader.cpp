@@ -23,6 +23,7 @@
 
 #include <netdb.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
 
 #include "bpf_includes.h"
 
@@ -38,7 +39,9 @@ struct ProgramConfig{
     int conf_map_fd;
     int values_map_fd;
     int registers_fd;
-    bool count_distinct_mode;
+    bool socket_data_provider;
+    int server_port;
+    std::string server_ip;
     int sockfd;
 } conf;
 
@@ -98,33 +101,85 @@ void provide_general_stats(struct GeneralStats stats){
     printf("%s", buff);
     fprintf(conf.data_f, "%s", buff);
 
-//    if (conf.sockfd != -1){
-//        char buff_size[2];
-//        buff_size[0] = (char)(s + 1);
-//        buff_size[1] = '\0';
-//        write(conf.sockfd, buff_size, sizeof(buff_size));
-//        write(conf.sockfd, buff, s + 1);
+    char buff_size[2];
+    buff_size[1] = '\0';
+    if (conf.socket_data_provider) {
+        buff_size[0] = (char) (s + 1);
+        send(conf.sockfd, buff_size, sizeof(buff_size), 0);
+        send(conf.sockfd, buff, s + 1, 0);
+    }
+
+//    while(!msgs.empty()){
+//        s = sprintf(buff, "Message: %s\n", msgs.front());
+//        msgs.pop();
+//        buff[s] = '\0';
+//        printf("%s", buff);
+//        fprintf(conf.data_f, "%s", buff);
+//
+//        if (conf.socket_data_provider){
+//            buff_size[0] = (char)(s + 1);
+//            send(conf.sockfd, buff_size, sizeof(buff_size), 0);
+//            send(conf.sockfd, buff, s + 1, 0);
+//        }
 //    }
 }
 
-void provide_message_anomaly_ip(u32 ip, double n){
-    unsigned char bytes[4];
-    bytes[0] = ip & 0xFF;
-    bytes[1] = (ip >> 8) & 0xFF;
-    bytes[2] = (ip >> 16) & 0xFF;
-    bytes[3] = (ip >> 24) & 0xFF;
-    printf("Message: Anomaly number of packets sent from IP %d.%d.%d.%d (%.2f > average)\n",
-            bytes[0], bytes[1], bytes[2], bytes[3], n);
-}
-
-
-void provide_message(char* msg, double n){
-    printf("Message: %s (%.2f > previous iteration)\n", msg, n);
-}
-
-
 void terminate(int dummy){
     keepRunning = 0;
+}
+
+
+int socket_data_provider_init(){
+    // Server configuration
+    int server_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (server_socket == -1){
+        fprintf(stderr, "SERVER: Failed to create socket.");
+        close(server_socket);
+        return -1;
+    }
+
+    // Bind some address
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(8080);
+
+    char ip[conf.server_ip.length() + 1];
+    strcpy(ip, conf.server_ip.c_str());
+
+    char* ip_address = "192.168.99.157";
+    addr.sin_addr.s_addr = inet_addr(ip_address);
+
+    if (bind(server_socket, (struct sockaddr*) &addr, sizeof(addr)) == -1){
+        fprintf(stderr, "SERVER: Unable to bind address. IP address: %s", conf.server_ip);
+        close(server_socket);
+        return -2;
+    }
+
+    printf("Bind address");
+
+    // Listen
+    if (listen(server_socket, 1) == -1) {
+        fprintf(stderr, "SERVER: Failed to listen.");
+        close(server_socket);
+        return -3;
+    }
+
+
+    int client_socket;
+    uint16_t message_length;
+
+
+    printf("Connection try: ");
+
+    // Accept connection
+    socklen_t socklen = sizeof addr;
+    client_socket = accept(server_socket, (struct sockaddr *) &addr, &socklen);
+    if (client_socket == -1) {
+        fprintf(stderr, "SERVER: Failed to accept.");
+        return -4;
+    }
+    conf.sockfd = client_socket;
+    return 0;
 }
 
 
@@ -180,9 +235,10 @@ int bpf_init(){
 
 int collect_info(){
     u32 key, next_key;
-    int value, err, pow, v, estimate;
+    int value, err, pow, v;
     int unique_ips, unique_ports, sum_count_ips, sum_count_ports, avg_unique_ips, avg_unique_ports, avg_count_per_ip;
     float avg_speed;
+    double estimate;
 
     std::queue<int> unique_ips_q, unique_ports_q, count_per_ip_q, speed_q;
     avg_unique_ips = 0;
@@ -200,6 +256,30 @@ int collect_info(){
     while(keepRunning){
         struct GeneralStats newStats;
 //        std::queue <std::string> logs;
+
+        // ESTIMATE
+
+        estimate = 0;
+        for (int j = 0; j < m; j++){
+            err = bpf_map_lookup_elem(conf.registers_fd, &j, &value);
+            if (err < 0){
+                fprintf(stderr, "ERROR: "
+                                "lookup value with key (%d) failed (%d): %s\n",
+                        j, -err, strerror(-err));
+            }
+            estimate += std::pow(2, -value);
+            value = 0;
+            err = bpf_map_update_elem(conf.registers_fd, &j, &value, BPF_ANY);
+            if (err < 0){
+                fprintf(stderr, "ERROR: "
+                                "delete value with key (%d) failed (%d): %s\n",
+                        j, -err, strerror(-err));
+            }
+        }
+
+        if (estimate > 0.1){
+            estimate = estimation_coef / estimate;
+        }
 
         // GENERAL STATS
         key = 0;
@@ -245,9 +325,8 @@ int collect_info(){
                     key, -err, strerror(-err));
         }
         if (newStats.speed > (comparisonMultiplier * (avg_speed / k_neighbors))){
-            printf("Anomaly increase of data transfer rate\n");
-//            provide_message("Anomaly increase of data transfer rate",
-//                            ((double) newStats.speed / ((double) previousStats.speed)));
+//            logs.push("Anomaly increase of data transfer rate.");
+            printf("Anomaly increase of data transfer rate.\n");
         }
         avg_speed += newStats.speed;
         speed_q.push(newStats.speed);
@@ -335,8 +414,16 @@ int collect_info(){
             unique_ips += 1;
             sum_count_ips += value;
             if (value > (comparisonMultiplier * (avg_count_per_ip / k_neighbors))){
-                printf("Anomaly ip: %d", key);
-//                provide_message_anomaly_ip(((double) value) / ((double) previousStats.average_count_per_ip), key);
+                char buff[16];
+                unsigned char bytes[4];
+                bytes[0] = key & 0xFF;
+                bytes[1] = (key >> 8) & 0xFF;
+                bytes[2] = (key >> 16) & 0xFF;
+                bytes[3] = (key >> 24) & 0xFF;
+                printf("Anomaly ip: %d.%d.%d.%d.\n",  bytes[0], bytes[1], bytes[2], bytes[3]);
+//                std::string buffAsStdStr = buff;
+//
+//                logs.push(buffAsStdStr);
             }
             print_ip_info(conf.data_f, next_key, value);
             key = next_key;
@@ -363,6 +450,9 @@ int collect_info(){
         }
 
         newStats.unique_ips = unique_ips;
+        if (unique_ips >= 100){
+            newStats.unique_ips = (int) estimate;
+        }
         newStats.unique_ports = unique_ports;
         newStats.average_count_per_ip = (int) ((double) sum_count_ips) / ((double) unique_ips);
         avg_count_per_ip += newStats.average_count_per_ip;
@@ -371,9 +461,8 @@ int collect_info(){
         count_per_ip_q.pop();
 
         if (newStats.unique_ips > (comparisonMultiplier * (avg_unique_ips / k_neighbors))){
-            printf("Anomaly of number of unique source IPs\n");
-//            provide_message("Anomaly of number of unique source IPs",
-//                            ((double) newStats.unique_ips / ((double) previousStats.unique_ips)));
+//            logs.push("Anomaly of number of unique source IPs.");
+            printf("Anomaly of number of unique source IPs.\n");
         }
         avg_unique_ips += newStats.unique_ips;
         unique_ips_q.push(newStats.unique_ips);
@@ -381,44 +470,22 @@ int collect_info(){
         unique_ips_q.pop();
 
         if (newStats.unique_ports > (comparisonMultiplier * (avg_unique_ports / k_neighbors))){
-            printf("Anomaly of number of unique destination PORTs\n");
-//            provide_message("Anomaly of number of unique destination PORTs",
-//                            ((double) newStats.unique_ports / ((double) previousStats.unique_ports)));
+//            logs.push("Anomaly of number of unique destination PORTs.");
+            printf("Anomaly of number of unique destination PORTs.\n");
         }
         avg_unique_ports += newStats.unique_ports;
         unique_ports_q.push(newStats.unique_ports);
         avg_unique_ports -= unique_ports_q.front();
         unique_ports_q.pop();
 
-        //
         provide_general_stats(newStats);
+//        while (!logs.empty()){
+//            printf("%s\n", logs.front());
+//            logs.pop();
+//        }
 
-        // ESTIMATE
-
-        estimate = 0;
-        for (int j = 0; j < m; j++){
-            err = bpf_map_lookup_elem(conf.registers_fd, &j, &value);
-            if (err < 0){
-                fprintf(stderr, "ERROR: "
-                                "lookup value with key (%d) failed (%d): %s\n",
-                        j, -err, strerror(-err));
-            }
-            estimate += std::pow(2, -value);
-            value = 0;
-            err = bpf_map_update_elem(conf.registers_fd, &j, &value, BPF_ANY);
-            if (err < 0){
-                fprintf(stderr, "ERROR: "
-                                "delete value with key (%d) failed (%d): %s\n",
-                        j, -err, strerror(-err));
-            }
-        }
-
-        if (estimate > 0.1){
-            estimate = estimation_coef / estimate;
-        }
-
-        printf("Estimate of unique IP addresses during run time: %d\n", estimate);
-        fprintf(conf.data_f, "Estimate of unique IP addresses during run time: %d\n", estimate);
+//        printf("Estimate of unique IP addresses during run time: %f\n", estimate);
+//        fprintf(conf.data_f, "Estimate of unique IP addresses during run time: %f\n", estimate);
 
         sleep(SLEEP_SECONDS);
     }
@@ -433,8 +500,9 @@ int main(int argc, char **argv) {
     char *chart_server_port_char = NULL;
     char *ifindex_char = NULL;
     int c, err;
+    conf.socket_data_provider = false;
 
-    while ((c = getopt(argc, argv, "hi:f:s:p:")) != -1){
+    while ((c = getopt(argc, argv, "hi:f:d:s:p:")) != -1){
         switch (c){
             case 'i':
                 ifindex_char = optarg;
@@ -446,6 +514,12 @@ int main(int argc, char **argv) {
                 break;
             case 'f':
                 data_file = optarg;
+                break;
+            case 'd':
+                conf.socket_data_provider = true;
+                break;
+            case 's':
+                conf.server_ip = std::string(optarg);
                 break;
             case 'p':
                 chart_server_port_char = optarg;
@@ -461,31 +535,6 @@ int main(int argc, char **argv) {
         }
     }
 
-//    int connfd;
-//    struct sockaddr_in servaddr, cli;
-//
-//    // socket create and verification
-//    conf.sockfd = socket(AF_INET, SOCK_STREAM, 0);
-//    if (conf.sockfd == -1) {
-//        printf("socket creation failed...\n");
-//        exit(0);
-//    }
-//    else
-//        printf("Socket successfully created..\n");
-//    bzero(&servaddr, sizeof(servaddr));
-//
-//    // assign IP, PORT
-//    servaddr.sin_family = AF_INET;
-//    servaddr.sin_addr.s_addr = inet_addr(chart_server_ip);
-//    servaddr.sin_port = htons(chart_server_port);
-//
-//    // connect the client socket to server socket
-//    if (connect(conf.sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) != 0) {
-//        printf("connection with the server failed...\n");
-//        exit(0);
-//    }
-//    else
-//        printf("connected to the server..\n");
 
 
     // Opening data file
@@ -501,6 +550,14 @@ int main(int argc, char **argv) {
         return -3;
     }
 
+    if (conf.socket_data_provider){
+        err = socket_data_provider_init();
+        if (err != 0){
+            fprintf(stderr, "ERROR: Failed to init data provider server: %d.\n", err);
+            return -3;
+        }
+    }
+
     signal(SIGINT, terminate);
 
     collect_info();
@@ -511,7 +568,9 @@ int main(int argc, char **argv) {
 
     close(conf.bpf_prog_fd);
 
-//    close(conf.sockfd);
+    if (conf.socket_data_provider){
+        close(conf.sockfd);
+    }
 
     return 0;
 }

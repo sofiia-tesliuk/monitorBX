@@ -6,7 +6,7 @@ application = Flask(__name__)
 
 LISTEN_PORT = 8080
 SOCKET = None
-SERVER_ADDRESS = ('', LISTEN_PORT)
+SERVER_ADDRESS = ('192.168.99.157', LISTEN_PORT)
 CONNECTION = None
 CLIENT_ADDRESS = None
 
@@ -51,14 +51,10 @@ def index():
 @application.route('/chart-data')
 def chart_data():
     def listen_to_port():
-        print('Waiting for a connection')
-        CONNECTION, CLIENT_ADDRESS = SOCKET.accept()
-        print('Connection from ', CLIENT_ADDRESS)
-
         try:
             while True:
-                size = CONNECTION.recv(2)
-                data = CONNECTION.recv(int.from_bytes(size, "big"))
+                size = SOCKET.recv(2)
+                data = SOCKET.recv(int.from_bytes(size, "big"))
                 if data:
                     json_data = json.dumps(data_to_dict(data))
                     print(json_data)
@@ -69,13 +65,12 @@ def chart_data():
 
         finally:
             print('Connection from closed from ', CLIENT_ADDRESS)
-            CONNECTION.close()
+            SOCKET.close()
 
     # Create a TCP/IP socket
     SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     print("Connecting to {} port {}".format(SERVER_ADDRESS[0], SERVER_ADDRESS[1]))
-    SOCKET.bind(SERVER_ADDRESS)
-    SOCKET.listen(1)
+    SOCKET.connect(SERVER_ADDRESS)
 
     return Response(listen_to_port(), mimetype='text/event-stream')
 

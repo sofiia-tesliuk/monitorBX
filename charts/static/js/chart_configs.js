@@ -7,7 +7,7 @@ const speed_config = {
     data: {
         labels: [],
         datasets: [{
-            label: "Speed",
+            label: "Data transfer rate",
             backgroundColor: 'rgb(255, 99, 132)',
             borderColor: 'rgb(255, 99, 132)',
             data: [],
@@ -40,7 +40,7 @@ const speed_config = {
                 display: true,
                 scaleLabel: {
                     display: true,
-                    labelString: 'Value'
+                    labelString: 'Value (bytes/s)'
                 }
             }]
         }
@@ -62,14 +62,7 @@ const packets_config = {
             borderColor: 'rgb(99, 99, 255)',
             data: [],
             fill: false,
-        },
-        {
-            label: "Dropped",
-            backgroundColor: 'rgb(255, 99, 132)',
-            borderColor: 'rgb(255, 99, 132)',
-            data: [],
-            fill: false,
-        }],
+        }]
     },
     options: {
         responsive: true,
@@ -97,7 +90,7 @@ const packets_config = {
                 display: true,
                 scaleLabel: {
                     display: true,
-                    labelString: 'Value'
+                    labelString: 'Number'
                 }
             }]
         }
@@ -185,14 +178,14 @@ const unique_config = {
     data: {
         labels: [],
         datasets: [{
-            label: "IPs",
+            label: "source IPs",
             backgroundColor: 'rgb(255, 99, 132)',
             borderColor: 'rgb(255, 99, 132)',
             data: [],
             fill: false,
         },
         {
-            label: "PORTs",
+            label: "destination PORTs",
             backgroundColor: 'rgb(99, 99, 255)',
             borderColor: 'rgb(99, 99, 255)',
             data: [],
@@ -225,7 +218,7 @@ const unique_config = {
                 display: true,
                 scaleLabel: {
                     display: true,
-                    labelString: 'Value'
+                    labelString: 'Number'
                 }
             }]
         }
