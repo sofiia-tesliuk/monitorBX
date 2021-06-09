@@ -1,4 +1,4 @@
-#define KBUILD_MODNAME "xdp_ip_address"
+#define KBUILD_MODNAME "xdp_monitorbx"
 
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
@@ -10,7 +10,7 @@
 #include <linux/tcp.h>
 #include <linux/udp.h>
 
-#define BPF_NOEXIST   1 /* create new element only if it didn't exist */
+#include "bpf_includes.h"
 
 #ifdef BPF_TRACE_CUSTOM
 #define custom_trace_printk(fmt,...) bpf_trace_printk(fmt, ##__VA_ARGS__)
@@ -18,7 +18,6 @@
 #define custom_trace_printk(fmt,...)
 #endif
 
-typedef unsigned int u32;
 
 // 0 -- save packets
 // 1 -- drop all packets
@@ -64,9 +63,47 @@ struct bpf_map_def SEC("maps") port_map = {
         .map_flags   = 0
 };
 
+struct bpf_map_def SEC("maps") registers = {
+        .type        = BPF_MAP_TYPE_ARRAY,
+        .key_size    = sizeof(int),
+        .value_size  = sizeof(int),
+        .max_entries = 128,
+};
+
+static int hashing(int ip){
+    int h = ((ip & 0xFF) << 24) + (((ip >> 8) & 0xFF) << 16) + (((ip >> 16) & 0xFF) << 8) + (((ip >> 24) & 0xFF));
+    return (h * 2654435761) % 4294967296;
+}
+
+// Index of left most 1
+static int rank(int hash){
+    int r = 0;
+    while (((hash & 1) == 0) && (r < (32 - p_bits))){
+        r++;
+        hash >>= 1;
+    }
+    return r+1;
+}
+
+// Number out of first log_2_m bits
+static int register_index(int hash){
+    int index = 0;
+    index = (hash >> (32 - p_bits));
+    return index & (m-1);
+}
+
+// Hash in binary string
+static char* binary_hash(int h){
+    char b[32] = {0};
+    for (int i = 0; i < 32; i++){
+        b[31 - i] = (h >> i) & 1 ? '1': '0';
+    }
+    return b;
+}
+
 
 SEC("tx")
-int xdp_tx(struct xdp_md *ctx)
+int xdp_monitorbx(struct xdp_md *ctx)
 {
     int XDP_ACTION = XDP_PASS;
     int index = 0;
@@ -99,7 +136,7 @@ int xdp_tx(struct xdp_md *ctx)
     index = 2;
     value = bpf_map_lookup_elem(&values_map, &index);
     if (value){
-        *value += sizeof(ctx);
+        *value += data_end - data;
     }else{
         char errmsg[] = "Failed to update size";
         custom_trace_printk(errmsg, sizeof(errmsg));
@@ -138,6 +175,27 @@ int xdp_tx(struct xdp_md *ctx)
             custom_trace_printk(errmsg, sizeof(errmsg), iph->saddr, err);
         }
     }
+
+    // Trace message about received packet
+    char msg_h[] = "Hash is %s; rank: %d; register index: %d"; // bpf_trace_printk doesn't allow more than 5 arguments
+    int h = hashing(iph->saddr);
+    int r = rank(h);
+    index = register_index(h);
+
+    custom_trace_printk(msg_h, sizeof(msg_h), binary_hash(h), r, index);
+
+    // Set register for source IP address
+    result = bpf_map_lookup_elem(&registers, &index);
+    if (result)
+        *result = (*result > r) ? *result : r;
+    else{
+        int err = bpf_map_update_elem(&registers, &index, &r, BPF_NOEXIST);
+        if (err != 0){
+            char errmsg[] = "Failed to add element to map with index %d, error code %d";
+            custom_trace_printk(errmsg, sizeof(errmsg), index, err);
+        }
+    }
+
 
     u32 dest_port = 0;
     // Identify the protocol of the packet

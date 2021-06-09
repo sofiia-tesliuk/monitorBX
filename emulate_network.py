@@ -50,11 +50,15 @@ def test_count_distinct(destination, sleep_seconds):
     ip_addresses_int = [i for i in tqdm(range(1, 4294967296, 37))]
     random.shuffle(ip_addresses_int)
 
-    print("Starting the flow.")
-    for source in ip_addresses_int:
-        sendp(Ether()/IP(src=int_to_ip_string(source), dst=destination, ttl=(1, 1)), iface="vboxnet0", verbose=False)
-        print(source)
-        time.sleep(sleep_seconds)
+    with open('ips.txt', 'w') as f:
+        for source in ip_addresses_int:
+            f.write("{}\n".format(str(source)))
+
+    # print("Starting the flow.")
+    # for source in ip_addresses_int:
+    #     sendp(Ether()/IP(src=int_to_ip_string(source), dst=destination, ttl=(1, 1)), iface="vboxnet0", verbose=False)
+    #     print(source)
+    #     time.sleep(sleep_seconds)
 
 
 def main():
