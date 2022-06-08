@@ -194,7 +194,7 @@ int bpf_init(){
                         "bpf program load failed (%d): %s\n",
                         -err, strerror(-err));
         return -1;
-    }else{
+    } else {
         printf("err: %d, prog_fd: %d\n", err, conf.bpf_prog_fd); // Noticed that err (that supposed to be fd of bpf program and prog_fd are different.)
     }
 

@@ -1,27 +1,87 @@
 .header{
-    padding: 20px 50px 20px 80px;
+    padding: 30px 50px 30px 80px;
 }
 
 .chart_columns{
-    width: 45%;
+    width: 36%;
     height: 100%;
 }
 
-/*aside{*/
-    /*width: 23%;*/
-    /*position: absolute;*/
-    /*right: 10px;*/
-    /*padding-left: 20px;*/
-/*}*/
+aside{
+    width: 23%;
+    height: 500px;
+    position: absolute;
+    right: 10px;
+    padding-right: 20px;
+    border-left: 2px solid grey;
+}
 
 .page{
     display: flex;
 }
 
 .log{
-    border-bottom: solid 1px grey;
+    color: red;
 }
 
 .row{
     padding-left: 50px;
+}
+
+canvas {
+    margin-bottom: 30px;
+}
+
+.panel_stats{
+    padding-left: 20px;
+    border-bottom: 2px solid grey;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+}
+
+#logs{
+    padding-left: 20px;
+}
+
+.header .decorate:before {
+    content: "";
+    position: absolute;
+    height: 50px;
+    width: 105px;
+    left: 67px;
+    top: 26px;
+    background-color: rgb(13, 255, 132);
+    transform: skewX(30deg);
+    transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.header .decorate:after {
+    content: "";
+    position: absolute;
+    height: 50px;
+    width: 105px;
+    left: 177px;
+    top: 35px;
+    background-color: rgb(255, 99, 132);
+    transform: skewX(30deg);
+    transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.header:hover .decorate:before {
+    transform: skewX(0deg);
+    left: 174px;
+    top: 30px;
+}
+
+.header:hover .decorate:after {
+    transform: skewX(0deg);
+    left: 69px;
+    top: 30px;
+}
+
+
+.logo.over {
+    position: absolute;
+    top: 30px;
+    left: 80px;
 }

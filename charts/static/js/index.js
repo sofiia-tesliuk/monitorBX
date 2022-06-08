@@ -21,6 +21,7 @@ $(document).ready(function () {
 
             packets_config.data.labels.shift();
             packets_config.data.datasets[0].data.shift();
+            packets_config.data.datasets[1].data.shift();
 
             protocols_config.data.labels.shift();
             protocols_config.data.datasets[0].data.shift();
@@ -40,6 +41,7 @@ $(document).ready(function () {
         // Packets
         packets_config.data.labels.push(data.time);
         packets_config.data.datasets[0].data.push(data.passed);
+        packets_config.data.datasets[1].data.push(data.dropped);
         packets_lineChart.update();
 
         // Protocols

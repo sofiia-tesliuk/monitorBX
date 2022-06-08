@@ -9,7 +9,8 @@
 </head>
 
 <div class="header">
-    <h1>monitorBX</h1>
+    <h1 class="logo decorate">monitorBX</h1>
+    <h1 class="logo over">monitorBX</h1>
 </div>
 
 <div class="row">
@@ -23,12 +24,47 @@
         <canvas id="unique_canvas"></canvas>
     </div>
 
-    <aside>
-        <div class="general_stats"></div>
+    <aside class="panel">
+        <div class="general_stats panel_stats">
+            <h5>Whole time</h5>
+            <table style="width:100%">
+              <tr>
+                <td>Passed packets:</td>
+                <td><b>0</b></td>
+              </tr>
+              <tr>
+                <td>Dropped packets:</td>
+                <td><b>0</b></td>
+              </tr>
+              <tr>
+                <td>Average transfer rate (bytes/s):</td>
+                <td><b>0</b></td>
+              </tr>
+            </table>
+        </div>
+
+        <div class="last_day panel_stats">
+            <h5>Last day</h5>
+            <table style="width:100%">
+              <tr>
+                <td>Passed packets:</td>
+                <td><b>0</b></td>
+              </tr>
+              <tr>
+                <td>Dropped packets:</td>
+                <td><b>0</b></td>
+              </tr>
+              <tr>
+                <td>Average transfer rate (bytes/s):</td>
+                <td><b>0</b></td>
+              </tr>
+            </table>
+        </div>
+
         <div id="logs">
-            <!--<div class="log">-->
-                <!--Mon May 31 17:10:04 2021: IP 192.168.84.23 looks suspicious.-->
-            <!--</div>-->
+            <h5>Logs</h5>
+            <div class="log">
+            </div>
         </div>
     </aside>
 </div>

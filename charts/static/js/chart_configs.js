@@ -62,6 +62,13 @@ const packets_config = {
             borderColor: 'rgb(99, 99, 255)',
             data: [],
             fill: false,
+        },
+        {
+            label: "Dropped",
+            backgroundColor: 'rgb(255, 207, 51)',
+            borderColor: 'rgb(255, 207, 51)',
+            data: [],
+            fill: false,
         }]
     },
     options: {
